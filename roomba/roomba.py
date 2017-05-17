@@ -53,6 +53,9 @@ try:
 except ImportError:
     print("PIL module not found, maps are disabled")
 
+global log
+log = logging.getLogger(__name__)
+
 
 #----------- Start of Classes ------------
 
@@ -1390,102 +1393,102 @@ class Roomba(object):
 
 #----------- End of Classes ------------
 
-if __name__ == '__main__':
-    #----------- Local Routines ------------
+#----------- Local Routines ------------
 
-    def broker_on_connect(client, userdata, flags, rc):
-        log.debug("Broker Connected with result code "+str(rc))
-        #subscribe to roomba feedback, if there is more than one roomba, the roombaName is added to the topic to subscribe to
-        if rc == 0:
-            if brokerCommand != "":
-                if len(roombas) == 1:
-                    mqttc.subscribe(brokerCommand)
-                else:
-                    for myroomba in roomba_list:
-                        mqttc.subscribe(myroomba.roombaName+"/"+brokerCommand)
-            if brokerSetting != "":
-                if len(roombas) == 1:
-                    mqttc.subscribe(brokerSetting)
-                else:
-                    for myroomba in roomba_list:
-                        mqttc.subscribe(myroomba.roombaName+"/"+brokerSetting)
-
-    def broker_on_message(mosq, obj, msg):
-        #publish to roomba, if there is more than one roomba, the roombaName is added to the topic to publish to
-        if "command" in msg.topic:
-            log.info("Received COMMAND: %s" % str(msg.payload))
+def broker_on_connect(client, userdata, flags, rc):
+    log.debug("Broker Connected with result code "+str(rc))
+    #subscribe to roomba feedback, if there is more than one roomba, the roombaName is added to the topic to subscribe to
+    if rc == 0:
+        if brokerCommand != "":
             if len(roombas) == 1:
-                roomba_list[0].send_command(str(msg.payload))
+                mqttc.subscribe(brokerCommand)
             else:
                 for myroomba in roomba_list:
-                    if myroomba.roombaName in msg.topic:
-                        myroomba.send_command(str(msg.payload))
-        elif "setting" in msg.topic:
-            log.info("Received SETTING: %s" % str(msg.payload))
-            cmd = str(msg.payload).split()
+                    mqttc.subscribe(myroomba.roombaName+"/"+brokerCommand)
+        if brokerSetting != "":
             if len(roombas) == 1:
-                roomba_list[0].set_preference(cmd[0], cmd[1])
+                mqttc.subscribe(brokerSetting)
             else:
                 for myroomba in roomba_list:
-                    if myroomba.roombaName in msg.topic:
-                        myroomba.set_preference(cmd[0], cmd[1])
+                    mqttc.subscribe(myroomba.roombaName+"/"+brokerSetting)
+
+def broker_on_message(mosq, obj, msg):
+    #publish to roomba, if there is more than one roomba, the roombaName is added to the topic to publish to
+    if "command" in msg.topic:
+        log.info("Received COMMAND: %s" % str(msg.payload))
+        if len(roombas) == 1:
+            roomba_list[0].send_command(str(msg.payload))
         else:
-            log.warn("Unknown topic: %s" % str(msg.topic))
+            for myroomba in roomba_list:
+                if myroomba.roombaName in msg.topic:
+                    myroomba.send_command(str(msg.payload))
+    elif "setting" in msg.topic:
+        log.info("Received SETTING: %s" % str(msg.payload))
+        cmd = str(msg.payload).split()
+        if len(roombas) == 1:
+            roomba_list[0].set_preference(cmd[0], cmd[1])
+        else:
+            for myroomba in roomba_list:
+                if myroomba.roombaName in msg.topic:
+                    myroomba.set_preference(cmd[0], cmd[1])
+    else:
+        log.warn("Unknown topic: %s" % str(msg.topic))
 
-    def broker_on_publish(mosq, obj, mid):
-        pass
+def broker_on_publish(mosq, obj, mid):
+    pass
 
-    def broker_on_subscribe(mosq, obj, mid, granted_qos):
-        log.debug("Broker Subscribed: %s %s" % (str(mid), str(granted_qos)))
+def broker_on_subscribe(mosq, obj, mid, granted_qos):
+    log.debug("Broker Subscribed: %s %s" % (str(mid), str(granted_qos)))
 
-    def broker_on_disconnect(mosq, obj, rc):
-        log.debug("Broker disconnected")
-        if rc == 0:
-            sys.exit(0)
+def broker_on_disconnect(mosq, obj, rc):
+    log.debug("Broker disconnected")
+    if rc == 0:
+        sys.exit(0)
 
-    def broker_on_log(mosq, obj, level, string):
-        log.info(string)
+def broker_on_log(mosq, obj, level, string):
+    log.info(string)
 
-    def read_config_file(file="./config.ini"):
-        #read config file
-        Config = configparser.ConfigParser()
-        try:
-            Config.read(file)
-            log.info("reading info from config file %s" % file)
-            roombas = {}
-            for address in Config.sections():
-                roombas[address] = {"blid": Config.get(address, "blid"), "password": Config.get(address, "password"), "roombaName": literal_eval(Config.get(address, "data"))["robotname"]}
-        except Exception as e:
-            log.warn("Error reading config file %s" %e)
-        return roombas
+def read_config_file(file="./config.ini"):
+    #read config file
+    Config = configparser.ConfigParser()
+    try:
+        Config.read(file)
+        log.info("reading info from config file %s" % file)
+        roombas = {}
+        for address in Config.sections():
+            roombas[address] = {"blid": Config.get(address, "blid"), "password": Config.get(address, "password"), "roombaName": literal_eval(Config.get(address, "data"))["robotname"]}
+    except Exception as e:
+        log.warn("Error reading config file %s" %e)
+    return roombas
 
-    def setup_logger(logger_name, log_file, level=logging.DEBUG, console=False):
-        try:
-            l = logging.getLogger(logger_name)
-            if logger_name ==__name__:
-                formatter = logging.Formatter('[%(levelname)1.1s %(asctime)s] %(message)s')
-            else:
-                formatter = logging.Formatter('%(message)s')
-            fileHandler = logging.handlers.RotatingFileHandler(log_file, mode='a', maxBytes=2000000, backupCount=5)
-            fileHandler.setFormatter(formatter)
-            if console == True:
-              streamHandler = logging.StreamHandler()
+def setup_logger(logger_name, log_file, level=logging.DEBUG, console=False):
+    try:
+        l = logging.getLogger(logger_name)
+        if logger_name ==__name__:
+            formatter = logging.Formatter('[%(levelname)1.1s %(asctime)s] %(message)s')
+        else:
+            formatter = logging.Formatter('%(message)s')
+        fileHandler = RotatingFileHandler(log_file, mode='a', maxBytes=2000000, backupCount=5)
+        fileHandler.setFormatter(formatter)
+        if console == True:
+          streamHandler = logging.StreamHandler()
 
-            l.setLevel(level)
-            l.addHandler(fileHandler)
-            if console == True:
-              streamHandler.setFormatter(formatter)
-              l.addHandler(streamHandler)
-        except IOError as e:
-            if e[0] == 13: #errno Permission denied
-                print("Error: %s: You probably don't have permission to write to the log file/directory - try sudo" % e)
-            else:
-                print("Log Error: %s" % e)
-            sys.exit(1)
+        l.setLevel(level)
+        l.addHandler(fileHandler)
+        if console == True:
+          streamHandler.setFormatter(formatter)
+          l.addHandler(streamHandler)
+    except IOError as e:
+        if e[0] == 13: #errno Permission denied
+            print("Error: %s: You probably don't have permission to write to the log file/directory - try sudo" % e)
+        else:
+            print("Log Error: %s" % e)
+        sys.exit(1)
 
 
-    #--------- End Local Routines ----------
+#--------- End Local Routines ----------
 
+def parse_args():
     import argparse
     #-------- Command Line -----------------
     parser = argparse.ArgumentParser(description='Forward MQTT data from Roomba 980 to local MQTT broker')
@@ -1516,8 +1519,10 @@ if __name__ == '__main__':
     parser.add_argument('-I','--iconPath', action='store',type=str, default="./", help='location of icons. (default: "./")')
     parser.add_argument('-x','--exclude', action='store',type=str, default="", help='Exclude topics that have this in them (default: "")')
     parser.add_argument('--version', action='version', version="%(prog)s ("+__version__+")")
+    return parser.parse_args()
 
-    arg = parser.parse_args()
+def main():
+    arg = parse_args()
 
     #----------- Global Variables -----------
     #-------------- Main --------------
@@ -1530,7 +1535,6 @@ if __name__ == '__main__':
     #setup logging
     setup_logger(__name__, arg.log,level=log_level,console=arg.echo)
 
-    log = logging.getLogger(__name__)
 
     #------------ Main ------------------
 
@@ -1626,3 +1630,5 @@ if __name__ == '__main__':
         mqttc.disconnect()
         sys.exit(0)
 
+if __name__ == '__main__':
+    main()
